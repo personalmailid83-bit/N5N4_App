@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<title>N5N4 SRS + Reset</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<style>
+body{margin:0; background:#f0f2f5; font-family:sans-serif}
+.header{background:#58CC02; color:white; padding:12px; text-align:center; font-weight:bold; font-size:18px}
+.tabs{display:flex; flex-wrap:wrap} .tabs button{flex:1; padding:10px; border:none; background:#ddd; font-weight:bold; font-size:11px}
+.tabs .active{background:#58CC02; color:white}
+.card{background:white; margin:10px; padding:20px; border-radius:15px; min-height:400px; text-align:center}
+.flashcard{background:#fff; border:3px solid #58CC02; border-radius:20px; padding:40px 20px; margin:20px 0; cursor:pointer; min-height:200px; display:flex; flex-direction:column; justify-content:center}
+.big{font-size:100px; font-weight:bold; margin:10px 0}
+.reading{font-size:32px; color:#1CB0F6; margin:15px 0}
+.meaning{font-size:32px; color:#58CC02; font-weight:bold; margin:15px 0; display:none}
+.hint{font-size:12px; color:#999; margin-top:10px}
+.btn{padding:14px 18px; margin:8px; border:none; border-radius:12px; font-size:15px; font-weight:bold; width:90%}
+.btn-sound{background:#1CB0F6; color:white}
+.btn-complete{background:#58CC02; color:white}
+.btn-50{background:#FFC107; color:black}
+.btn-hard{background:#FF4B4B; color:white}
+.btn-next{background:#9333EA; color:white}
+.btn-remove{background:#999; color:white}
+.btn-reset{background:#FF4B4B; color:white; width:95%; margin-bottom:15px}
+.option{background:#1CB0F6; color:white}
+.item{border-bottom:1px solid #eee; padding:10px; text-align:left; font-size:14px}
+.item-btn{padding:5px 10px; margin:3px; font-size:12px; width:30%}
+.xp{font-weight:bold; color:#FFC107}
+select{padding:8px; margin:10px; border-radius:8px; border:1px solid #ccc}
+</style>
+</head>
+<body>
+<div class="header">N5 N4 Master | XP: <span class="xp" id="xp">0</span></div>
+<input type="file" id="upload" accept=".xlsx,.xls" style="margin:15px" />
+<p id="status" style="text-align:center; color:red">Bangla meaning wala Excel select koro</p>
+
+<select id="sheet" onchange="changeSheet()">
+  <option value="Vocab">Vocab</option>
+  <option value="Kanji">Kanji</option>
+</select>
+
+<div class="tabs">
+<button class="active" onclick="openTab(0)">Flashcard SRS</button>
+<button onclick="openTab(1)">Quiz</button>
+<button onclick="openTab(2)">Complete <span id="c1">0</span></button>
+<button onclick="openTab(3)">50-50 <span id="c2">0</span></button>
+<button onclick="openTab(4)">Hard <span id="c3">0</span></button>
+</div>
+
+<div id="tab0" class="card"><h2>Excel upload koro</h2></div>
+<div id="tab1" class="card" style="display:none"><h2>Quiz Mode</h2></div>
+<div id="tab2" class="card" style="display:none"></div>
+<div id="tab3" class="card" style="display:none"></div>
+<div id="tab4" class="card" style="display:none"></div>
+
+<script>
+let Data = {Vocab:[], Kanji:[]};
+let Complete = JSON.parse(localStorage.getItem('Complete_BN')) || [];
+let Half = JSON.parse(localStorage.getItem('Half_BN')) || [];
+let Hard = JSON.parse(localStorage.getItem('Hard_BN')) || [];
+let xp = parseInt(localStorage.getItem('xp')) || 0;
+let current = {}; let currentSheet = 'Vocab'; 
+let step = 0; 
+document.getElementById('xp').innerText = xp;
+
+document.getElementById('upload').addEventListener('change', function(e){
+    let reader = new FileReader();
+    reader.onload = function(e){
+        let wb = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+        
+        let raw1 = XLSX.utils.sheet_to_json(wb.Sheets['Vocab'], {header:1});
+        Data.Vocab = raw1.slice(1).map(r => ({Vocab:r[1], Reading:r[2], Meaning:r[3], Romaji:r[4]})).filter(x=>x.Vocab);
+
+        let raw2 = XLSX.utils.sheet_to_json(wb.Sheets['Kanji'], {header:1});
+        Data.Kanji = raw2.slice(1).map(r => ({Vocab:r[1], Reading:r[2]+' / '+r[3], Meaning:r[4], Romaji:r[6]})).filter(x=>x.Vocab);
+        
+        document.getElementById('status').innerHTML = `✅ Loaded: Vocab ${Data.Vocab.length} | Kanji ${Data.Kanji.length}`;
+        document.getElementById('status').style.color = 'green';
+        changeSheet();
+    }
+    reader.readAsArrayBuffer(e.target.files[0]);
+});
+
+function changeSheet(){ currentSheet = document.getElementById('sheet').value; loadStudy(); loadQuiz(); loadLists(); }
+function openTab(n){ document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active',i==n)); document.querySelectorAll('[id^=tab]').forEach((d,i)=>d.style.display = i==n?'block':'none'); }
+function getData(){ return Data[currentSheet]; }
+
+function loadStudy(){
+    let pool = getData().filter(v => !Complete.find(c=>c.Vocab==v.Vocab) && !Half.find(c=>c.Vocab==v.Vocab) && !Hard.find(c=>c.Vocab==v.Vocab));
+    if(pool.length==0) pool = getData(); 
+    if(pool.length==0) {document.getElementById('tab0').innerHTML="<h2>Age Excel Upload Koro</h2>"; return;}
+    current = pool[Math.floor(Math.random()*pool.length)];
+    step = 0; 
+
+    let showReading = currentSheet == 'Vocab' ? 'block' : 'none';
+
+    document.getElementById('tab0').innerHTML = `
+    <p>${currentSheet} - Card ${getData().length - pool.length + 1} / ${getData().length}</p>
+    <div class="flashcard" onclick="revealStep()">
+        <div class="big">${current.Vocab}</div>
+        <div class="reading" id="reading" style="display:${showReading}">${current.Reading}</div>
+        <div class="meaning" id="meaning">${current.Meaning}</div>
+        <div class="hint" id="hint">${currentSheet == 'Vocab' ? 'Shunun button chap dao 🔊' : 'Shunun button chap dao, tarpor tap koro'}</div>
+    </div>
+    <button class="btn btn-sound" id="soundBtn" onclick="playSound()">🔊 Shunun</button>
+    <div id="buttons" style="display:none">
+        <button class="btn btn-complete" onclick="mark('complete',10)">✅ Mone Ache +10 XP</button>
+        <button class="btn btn-50" onclick="mark('half',5)">🟡 Ektu Mone Ache +5 XP</button>
+        <button class="btn btn-hard" onclick="mark('hard',0)">❌ Mone Nai +0 XP</button>
+    </div>
+    <button class="btn btn-next" onclick="nextAndComplete()">⏭️ Next = Complete</button>`;
+}
+
+function playSound(){ speak(current.Vocab); document.getElementById('soundBtn').innerText = '🔊 Abar Shunun'; }
+function revealStep(){
+    if(currentSheet == 'Kanji' && step == 0){
+        step = 1;
+        document.getElementById('reading').style.display = 'block';
+        document.getElementById('meaning').style.display = 'block';
+        document.getElementById('hint').style.display = 'none';
+        document.getElementById('buttons').style.display = 'block';
+        document.getElementById('soundBtn').style.display = 'none';
+    }
+    if(currentSheet == 'Vocab' && step == 0){
+        step = 1;
+        document.getElementById('meaning').style.display = 'block';
+        document.getElementById('hint').style.display = 'none';
+        document.getElementById('buttons').style.display = 'block';
+        document.getElementById('soundBtn').style.display = 'none';
+    }
+}
+
+function nextAndComplete(){ moveWord(current, 'complete'); }
+function mark(type, point){ moveWord(current, type); xp += point; localStorage.setItem('xp', xp); document.getElementById('xp').innerText = xp; }
+
+function moveWord(word, type){
+    removeFromAll(word);
+    if(type=='complete') Complete.push(word);
+    if(type=='half') Half.push(word);
+    if(type=='hard') Hard.push(word);
+    saveAll();
+    loadStudy(); 
+    loadLists();
+}
+
+function removeFromAll(word){
+    Complete = Complete.filter(x=>x.Vocab != word.Vocab);
+    Half = Half.filter(x=>x.Vocab != word.Vocab);
+    Hard = Hard.filter(x=>x.Vocab != word.Vocab);
+}
+
+function saveAll(){
+    localStorage.setItem('Complete_BN', JSON.stringify(Complete));
+    localStorage.setItem('Half_BN', JSON.stringify(Half));
+    localStorage.setItem('Hard_BN', JSON.stringify(Hard));
+}
+
+function resetList(type){
+    Swal.fire({
+        title: 'Confirm?',
+        text: type + " er sob word reset hobe",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Ha Reset koro'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if(type == 'Complete') Complete = [];
+            if(type == '50-50') Half = [];
+            if(type == 'Hard') Hard = [];
+            saveAll();
+            loadLists();
+            Swal.fire('Reset!', type + ' khali hoye geche', 'success');
+        }
+    })
+}
+
+function loadLists(){
+    document.getElementById('c1').innerText = Complete.length;
+    document.getElementById('c2').innerText = Half.length;
+    document.getElementById('c3').innerText = Hard.length;
+    
+    // Complete Tab
+    document.getElementById('tab2').innerHTML = `<button class="btn btn-reset" onclick="resetList('Complete')">🗑️ Reset Complete</button><h3>Complete</h3>` + Complete.map(w=>`
+    <div class="item"><b>${w.Vocab}</b> : ${w.Meaning}
+    <br><button class="btn btn-remove item-btn" onclick="moveFromList('${w.Vocab}','remove')">Remove</button>
+    <button class="btn btn-complete item-btn" onclick="moveFromList('${w.Vocab}','complete')">Complete</button>
+    </div>`).join('');
+    
+    // 50-50 Tab
+    document.getElementById('tab3').innerHTML = `<button class="btn btn-reset" onclick="resetList('50-50')">🗑️ Reset 50-50</button><h3>50-50</h3>` + Half.map(w=>`
+    <div class="item"><b>${w.Vocab}</b> : ${w.Meaning}
+    <br><button class="btn btn-remove item-btn" onclick="moveFromList('${w.Vocab}','remove')">Remove</button>
+    <button class="btn btn-complete item-btn" onclick="moveFromList('${w.Vocab}','complete')">Complete</button>
+    </div>`).join('');
+    
+    // Hard Tab
+    document.getElementById('tab4').innerHTML = `<button class="btn btn-reset" onclick="resetList('Hard')">🗑️ Reset Hard</button><h3>Hard</h3>` + Hard.map(w=>`
+    <div class="item"><b>${w.Vocab}</b> : ${w.Meaning}
+    <br><button class="btn btn-remove item-btn" onclick="moveFromList('${w.Vocab}','remove')">Remove</button>
+    <button class="btn btn-50 item-btn" onclick="moveFromList('${w.Vocab}','half')">50-50</button>
+    <button class="btn btn-complete item-btn" onclick="moveFromList('${w.Vocab}','complete')">Complete</button>
+    </div>`).join('');
+}
+
+function moveFromList(vocab, action){
+    let word = [...Complete, ...Half, ...Hard].find(x=>x.Vocab == vocab);
+    if(!word) return;
+    removeFromAll(word);
+    if(action == 'remove'){ /* main e chole jabe */ }
+    if(action == 'half') Half.push(word);
+    if(action == 'complete') Complete.push(word);
+    saveAll();
+    loadLists();
+}
+
+function loadQuiz(){
+    let pool = getData();
+    if(pool.length==0) {document.getElementById('tab1').innerHTML="<h2>Age Excel Upload Koro</h2>"; return;}
+    current = pool[Math.floor(Math.random()*pool.length)];
+    let options = [current.Meaning];
+    while(options.length<4){ let r = pool[Math.floor(Math.random()*pool.length)].Meaning; if(!options.includes(r)) options.push(r); }
+    options.sort(()=>Math.random()-0.5);
+    document.getElementById('tab1').innerHTML = `<p>${currentSheet} - Quiz</p><div class="big" onclick="speak('${current.Vocab}')">${current.Vocab}</div>${options.map(o=>`<button class="btn option" onclick="checkQuiz('${o}')">${o}</button>`).join('')}`;
+}
+function checkQuiz(ans){ if(ans == current.Meaning){ xp += 10; localStorage.setItem('xp', xp); document.getElementById('xp').innerText = xp; Swal.fire('সঠিক!', '+10 XP', 'success'); } else { Swal.fire('ভুল!', 'সঠিক: '+current.Meaning, 'error'); moveWord(current, 'hard'); } loadQuiz(); loadLists(); }
+
+function speak(text){ speechSynthesis.cancel(); let msg = new SpeechSynthesisUtterance(text); msg.lang = 'ja-JP'; msg.rate = 0.9; speechSynthesis.speak(msg); }
+</script>
+</body>
+</html>

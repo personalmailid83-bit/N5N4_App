@@ -1,0 +1,22 @@
+{
+  "name": "N5 N4 Master",
+  "short_name": "N5N4",
+  "description": "JLPT N5 N4 Vocab + Kanji SRS App with Bangla",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#3333FF",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
